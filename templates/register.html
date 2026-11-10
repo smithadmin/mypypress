@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}Register – {% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h1>Create an account</h1>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    <label for="username">Username</label>
+    <input id="username" name="username" value="{{ username }}" autocomplete="username" required autofocus>
+    <label for="password">Password <small class="muted">(8+ characters)</small></label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required>
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+    <button type="submit">Register</button>
+  </form>
+  <p class="muted">New accounts can read and comment. An administrator can enable posting for you.</p>
+</div>
+{% endblock %}

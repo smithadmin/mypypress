@@ -1,0 +1,18 @@
+services:
+  mypypress:
+    build: .
+    image: mypypress:latest
+    container_name: mypypress
+    restart: unless-stopped          # comes back after crashes and host reboots
+    user: "${PUID:-1000}:${PGID:-1000}"   # must own ./data on the host
+    ports:
+      - "8000:8000"
+    environment:
+      # Only used the very first time, when the database has no users yet:
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"   # empty = random password printed in `docker compose logs`
+      # Set these when serving over HTTPS behind a reverse proxy:
+      COOKIE_SECURE: "${COOKIE_SECURE:-0}"
+      TRUST_PROXY: "${TRUST_PROXY:-0}"
+    volumes:
+      - ./data:/data                 # database, uploads, secret key live on the host disk

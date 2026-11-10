@@ -1,0 +1,15 @@
+{% macro tag_list(tags) %}
+{% if tags %}<div class="tags">{% for t in tags %}<a class="tag" href="{{ url_for('tag', slug=t.slug) }}">{{ t.name }}</a>{% endfor %}</div>{% endif %}
+{% endmacro %}
+
+{% macro pager(page, pages) %}
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="{{ page_url(page - 1) }}">&laquo; Newer</a>{% else %}<span></span>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="{{ page_url(page + 1) }}">Older &raquo;</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}

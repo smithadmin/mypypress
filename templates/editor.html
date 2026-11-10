@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}{{ 'Edit post' if post else 'New post' }} – {% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ 'Edit post' if post else 'New post' }}</h1>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    <label for="title">Title</label>
+    <input id="title" name="title" value="{{ values.title }}" maxlength="200" required>
+    <label for="body">Body <small class="muted">(Markdown supported; raw HTML is not allowed)</small></label>
+    <textarea id="body" name="body" rows="18" required>{{ values.body }}</textarea>
+    <label for="tags">Tags <small class="muted">(comma separated, up to 10)</small></label>
+    <input id="tags" name="tags" value="{{ values.tags }}" placeholder="python, tutorials">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="published" {{ 'selected' if values.status != 'draft' }}>Published</option>
+      <option value="draft" {{ 'selected' if values.status == 'draft' }}>Draft (only visible to you and admins)</option>
+    </select>
+    <div class="actions"><button type="submit">Save</button>
+      <a class="btn secondary" href="{{ url_for('view_post', slug=post.slug) if post else url_for('index') }}">Cancel</a></div>
+  </form>
+</div>
+{% endblock %}

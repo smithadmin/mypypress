@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}Users – {% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Users</h1>
+  <div class="table-scroll">
+  <table>
+    <tr><th>User</th><th>Role</th><th>Can post</th><th>Status</th><th>Posts</th><th>Comments</th><th>Actions</th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }}{% if u.id == g.user['id'] %} <small class="muted">(you)</small>{% endif %}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ 'yes' if u.can_post or u.role == 'admin' else 'no' }}</td>
+      <td>{{ 'active' if u.active else 'deactivated' }}</td>
+      <td>{{ u.post_count }}</td><td>{{ u.comment_count }}</td>
+      <td class="row-actions">
+        {% if u.id != g.user['id'] %}
+        {% for action, label, confirm in [
+            ('toggle_post', 'Disable posting' if u.can_post else 'Enable posting', none),
+            ('toggle_admin', 'Make user' if u.role == 'admin' else 'Make admin', none),
+            ('toggle_active', 'Reactivate' if not u.active else 'Deactivate', none),
+            ('delete', 'Delete', 'Delete user ' ~ u.username ~ '? Their posts will be reassigned to you.')] %}
+        <form method="post" action="{{ url_for('admin_user_action', uid=u.id, action=action) }}" class="inline"
+              {% if confirm %}data-confirm="{{ confirm }}"{% endif %}>
+          {{ csrf() }}<button class="link-btn small" type="submit">{{ label }}</button>
+        </form>
+        {% endfor %}
+        <form method="post" action="{{ url_for('admin_user_action', uid=u.id, action='reset_password') }}" class="inline">
+          {{ csrf() }}<input type="password" name="password" placeholder="new password" minlength="8" class="tiny" required>
+          <button class="link-btn small" type="submit">Reset password</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+<div class="card">
+  <h2>Add user</h2>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    <label for="username">Username</label><input id="username" name="username" required>
+    <label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required>
+    <label for="role">Role</label>
+    <select id="role" name="role"><option value="user">User</option><option value="admin">Administrator</option></select>
+    <label class="check"><input type="checkbox" name="can_post" value="1"> Allow this user to create and edit their own posts</label>
+    <button type="submit">Create user</button>
+  </form>
+</div>
+{% endblock %}

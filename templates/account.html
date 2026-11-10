@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}Account – {% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h1>{{ g.user['username'] }}</h1>
+  <p class="muted">Role: {{ g.user['role'] }}{% if g.user['role'] != 'admin' %} &middot; Posting: {{ 'enabled' if g.user['can_post'] else 'not enabled' }}{% endif %}</p>
+  <h2>Change password</h2>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    <label for="current">Current password</label>
+    <input id="current" name="current" type="password" autocomplete="current-password" required>
+    <label for="password">New password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" required>
+    <label for="confirm">Confirm new password</label>
+    <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+    <button type="submit">Change password</button>
+  </form>
+</div>
+{% endblock %}

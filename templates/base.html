@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %}{{ site.site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>{{ theme_css }}</style>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-row">
+    <div>
+      <a class="site-name" href="{{ url_for('index') }}">{{ site.site_name }}</a>
+      {% if site.tagline %}<div class="tagline">{{ site.tagline }}</div>{% endif %}
+    </div>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}">Home</a>
+      {% if g.user %}
+        {% if can_post() %}<a href="{{ url_for('new_post') }}">New post</a><a href="{{ url_for('dashboard') }}">{{ 'All posts' if is_admin() else 'My posts' }}</a>{% endif %}
+        {% if is_admin() %}<a href="{{ url_for('admin_settings') }}">Site settings</a><a href="{{ url_for('admin_users') }}">Users</a>{% endif %}
+        <a href="{{ url_for('account') }}">{{ g.user['username'] }}</a>
+        <form method="post" action="{{ url_for('logout') }}" class="inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="link-btn" type="submit">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('login') }}">Log in</a>
+        {% if site.allow_registration == '1' %}<a href="{{ url_for('register') }}">Register</a>{% endif %}
+      {% endif %}
+    </nav>
+  </div>
+</header>
+
+{% if site.banner_image or site.banner_text %}
+<div class="banner">
+  {% if site.banner_image %}<img src="{{ url_for('uploads', filename=site.banner_image) }}" alt="">{% endif %}
+  {% if site.banner_text %}<div class="banner-text">{{ site.banner_text }}</div>{% endif %}
+</div>
+{% endif %}
+
+<div class="wrap layout">
+  <main>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+  <aside>
+    <section class="card">
+      <h3>Search</h3>
+      <form method="get" action="{{ url_for('search') }}" class="search">
+        <input type="search" name="q" value="{{ search_q or '' }}" placeholder="Search posts…" maxlength="200">
+        <button type="submit">Go</button>
+      </form>
+    </section>
+    {% set tags = popular_tags() %}
+    {% if tags %}
+    <section class="card">
+      <h3>Tags</h3>
+      <div class="tag-cloud">
+        {% for t in tags %}<a class="tag" href="{{ url_for('tag', slug=t['slug']) }}">{{ t['name'] }} <small>{{ t['n'] }}</small></a>{% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+<footer class="wrap site-footer">{{ site.site_name }} &middot; powered by MyPyPress</footer>
+</body>
+</html>

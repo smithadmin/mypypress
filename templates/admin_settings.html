@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}Site settings – {% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Site settings</h1>
+  <form method="post" enctype="multipart/form-data" class="stack">
+    {{ csrf() }}
+    <label for="site_name">Site name</label>
+    <input id="site_name" name="site_name" value="{{ values.site_name }}" maxlength="80" required>
+    <label for="tagline">Tagline</label>
+    <input id="tagline" name="tagline" value="{{ values.tagline }}" maxlength="200">
+
+    <h2>Banner</h2>
+    <label for="banner_text">Banner text <small class="muted">(leave empty for none)</small></label>
+    <input id="banner_text" name="banner_text" value="{{ values.banner_text }}" maxlength="200">
+    <label for="banner_image">Banner image <small class="muted">(PNG, JPEG, GIF or WebP, max 6 MB)</small></label>
+    {% if values.banner_image %}
+      <img class="banner-preview" src="{{ url_for('uploads', filename=values.banner_image) }}" alt="Current banner">
+      <label class="check"><input type="checkbox" name="remove_banner" value="1"> Remove current banner image</label>
+    {% endif %}
+    <input id="banner_image" name="banner_image" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+
+    <h2>Theme colours</h2>
+    <div class="colors">
+      {% for k in colors %}
+      <label class="color-field">{{ labels[k] }}
+        <input type="color" name="color_{{ k }}" value="{{ values['color_' ~ k] }}">
+      </label>
+      {% endfor %}
+    </div>
+
+    <h2>General</h2>
+    <label class="check"><input type="checkbox" name="allow_registration" value="1" {{ 'checked' if values.allow_registration == '1' }}> Allow visitors to register accounts</label>
+    <label for="posts_per_page">Posts per page</label>
+    <input id="posts_per_page" name="posts_per_page" type="number" min="1" max="50" value="{{ values.posts_per_page }}">
+    <div class="actions"><button type="submit">Save settings</button></div>
+  </form>
+</div>
+{% endblock %}
