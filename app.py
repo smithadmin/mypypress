@@ -1,8 +1,8 @@
 """MyPyPress - a small WordPress-style blogging platform (Flask + SQLite).
 
 Features: multiple users, roles (admin / user), per-user "can post" permission,
-posts with Markdown, tags, comments, search, drafts, and admin customization of
-site name, tagline, banner (text + image) and theme colors.
+posts with Markdown, tags, comments, search, drafts, image uploads for authors, and admin customisation of
+site name, tagline, banner (text + image) and theme colours.
 
 All persistent state (database, uploads, secret key) lives in DATA_DIR.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 import markdown
 from markdown.treeprocessors import Treeprocessor
 from markupsafe import Markup
-from flask import (Flask, abort, flash, g, redirect, render_template, request,
+from flask import (Flask, abort, flash, g, jsonify, redirect, render_template, request,
                    send_from_directory, session, url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -56,6 +56,8 @@ COLOR_LABELS = {
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 UPLOAD_NAME_RE = re.compile(r"^[0-9a-f]{16}\.(png|jpg|gif|webp)$")
+MAX_IMAGE_BYTES = 5 * 1024 * 1024        # per image
+DEFAULT_QUOTA_MB = 50                    # per non-admin user (env USER_UPLOAD_QUOTA_MB)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -96,6 +98,15 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+CREATE TABLE IF NOT EXISTS images (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  filename TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -236,6 +247,12 @@ def dt_filter(value):
         return value or ""
 
 
+@app.template_filter("img_alt")
+def img_alt_filter(original_name):
+    stem = re.sub(r"[^\w .-]", "", Path(original_name).stem).strip()[:60]
+    return stem or "image"
+
+
 def excerpt(body, n=280):
     text = html.unescape(re.sub(r"<[^>]+>", " ", render_markdown(body)))
     text = " ".join(text.split())
@@ -323,8 +340,7 @@ def can_edit(post):
 def can_delete_post(post):
     # Spec: admins write to everything; authors only edit their own posts.
     # To let authors delete their own posts, return can_edit(post) instead.
-    #return is_admin()       # Uncomment this line for only Admin to delete post
-    return can_edit(post)    # Logged-in users can delete their own posts too
+    return is_admin()
 
 
 def can_delete_comment(c):
@@ -418,6 +434,8 @@ def http_error(e):
             413: "That upload is too large (6 MB max)."}
     detail = e.description if e.code in (400, 403) and e.description and \
         not e.description.startswith(("The browser", "You don't have the permission")) else msgs.get(e.code, e.description)
+    if request.path == "/images/upload":      # the editor's fetch() expects JSON
+        return jsonify(error=detail), e.code
     return render_template("error.html", code=e.code, message=detail), e.code
 
 
@@ -769,6 +787,87 @@ def delete_post(slug):
 
 
 # --------------------------------------------------------------------------
+# Post images (uploaded by authors, used inline via Markdown)
+# --------------------------------------------------------------------------
+def quota_bytes():
+    try:
+        return max(0, int(os.environ.get("USER_UPLOAD_QUOTA_MB", DEFAULT_QUOTA_MB))) * 1024 * 1024
+    except ValueError:
+        return DEFAULT_QUOTA_MB * 1024 * 1024
+
+
+def used_bytes(user_id):
+    return get_db().execute("SELECT COALESCE(SUM(size),0) FROM images WHERE user_id=?",
+                            (user_id,)).fetchone()[0]
+
+
+def store_image(file):
+    """Validate and save an uploaded image. Returns (info_dict, None) or (None, error_message)."""
+    if not file or not file.filename:
+        return None, "Choose an image file first."
+    data = file.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        return None, f"That image is too large ({MAX_IMAGE_BYTES // 1024 // 1024} MB max)."
+    ext = detect_image(data[:16])
+    if not ext:
+        return None, "Only PNG, JPEG, GIF or WebP images are allowed."
+    if not is_admin() and used_bytes(g.user["id"]) + len(data) > quota_bytes():
+        return None, (f"Upload limit of {quota_bytes() // 1024 // 1024} MB reached. "
+                      "Delete some images you no longer use and try again.")
+    name = f"{secrets.token_hex(8)}.{ext}"
+    (app.config["UPLOAD_DIR"] / name).write_bytes(data)
+    db = get_db()
+    cur = db.execute("INSERT INTO images(user_id,filename,original_name,size,created_at) VALUES (?,?,?,?,?)",
+                     (g.user["id"], name, file.filename[:200], len(data), now()))
+    db.commit()
+    url = url_for("uploads", filename=name)
+    return {"id": cur.lastrowid, "filename": name, "url": url,
+            "markdown": f"![{img_alt_filter(file.filename)}]({url})"}, None
+
+
+@app.route("/images", methods=["GET", "POST"])
+@poster_required
+def images():
+    if request.method == "POST":
+        info, err = store_image(request.files.get("image"))
+        flash(err or "Image uploaded. Copy its Markdown below into your post.", "error" if err else "ok")
+        return redirect(url_for("images"))
+    where, params = ("", ()) if is_admin() else ("WHERE i.user_id=?", (g.user["id"],))
+    rows = get_db().execute(
+        "SELECT i.*, u.username, (SELECT COUNT(*) FROM posts p WHERE instr(p.body, i.filename) > 0) AS used_in "
+        f"FROM images i LEFT JOIN users u ON u.id=i.user_id {where} "
+        "ORDER BY i.created_at DESC, i.id DESC LIMIT 200", params).fetchall()
+    return render_template("images.html", images=rows, used=used_bytes(g.user["id"]),
+                           quota=None if is_admin() else quota_bytes())
+
+
+@app.route("/images/upload", methods=["POST"])
+@poster_required
+def upload_image_api():
+    """Used by the editor's "Insert image" button (JSON in, JSON out)."""
+    info, err = store_image(request.files.get("image"))
+    if err:
+        return jsonify(error=err), 400
+    return jsonify(info)
+
+
+@app.route("/images/<int:image_id>/delete", methods=["POST"])
+@poster_required
+def delete_image(image_id):
+    db = get_db()
+    img = db.execute("SELECT * FROM images WHERE id=?", (image_id,)).fetchone()
+    if not img:
+        abort(404)
+    if not is_admin() and img["user_id"] != g.user["id"]:
+        abort(403)
+    db.execute("DELETE FROM images WHERE id=?", (image_id,))
+    db.commit()
+    remove_upload(img["filename"])
+    flash("Image deleted.", "ok")
+    return redirect(url_for("images"))
+
+
+# --------------------------------------------------------------------------
 # Administration
 # --------------------------------------------------------------------------
 def detect_image(head):
@@ -813,7 +912,7 @@ def admin_settings():
             errors.append("Posts per page must be between 1 and 50.")
         for k in COLOR_KEYS:
             if not HEX_RE.match(new["color_" + k]):
-                errors.append(f"Invalid color for “{COLOR_LABELS[k]}”.")
+                errors.append(f"Invalid colour for “{COLOR_LABELS[k]}”.")
         upload = request.files.get("banner_image")
         image_data = ext = None
         if upload and upload.filename:

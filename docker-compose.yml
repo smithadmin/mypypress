@@ -12,6 +12,7 @@ services:
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"   # empty = random password printed in `docker compose logs`
       # Set these when serving over HTTPS behind a reverse proxy:
+      USER_UPLOAD_QUOTA_MB: "${USER_UPLOAD_QUOTA_MB:-50}"   # per-user image storage limit (admins exempt)
       COOKIE_SECURE: "${COOKIE_SECURE:-0}"
       TRUST_PROXY: "${TRUST_PROXY:-0}"
     volumes:

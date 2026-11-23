@@ -8,10 +8,14 @@ A small WordPress-style blog/CMS in Python (Flask + SQLite, no external services
   - Visitors (not logged in): read posts and comments only.
   - Logged-in users: comment on any published post.
   - Users an admin has enabled for posting ("Can post"): create posts and edit **their own** posts.
-  - Administrators: write/edit **any** post, delete posts and comments, manage users, customize the site.
+  - Administrators: write/edit **any** post, delete posts and comments, manage users, customise the site.
 - **Posts** – Markdown (raw HTML is escaped), drafts, tags, comments, pagination.
+- **Images** – users allowed to post can upload PNG/JPEG/GIF/WebP images (max 5 MB each, 50 MB per user,
+  admins unlimited) from the editor's **Insert image…** button or the **Images** page, and the Markdown
+  is inserted at the cursor. Authors manage/delete their own images; admins can manage all. Linking to
+  external `https://` images also works.
 - **Search** – every word must match the title, body or a tag (published posts only).
-- **Admin customisation** – site name, tagline, banner text + banner image, theme colors, registration on/off, posts per page.
+- **Admin customisation** – site name, tagline, banner text + banner image, theme colours, registration on/off, posts per page.
 
 ## Run locally (development)
     pip install -r requirements.txt
@@ -35,7 +39,7 @@ Open http://localhost:8000. Everything persistent is in `./data` on the host:
 | File | Contents |
 |---|---|
 | `data/blog.db` (+ `-wal`, `-shm`) | users, posts, comments, tags, settings |
-| `data/uploads/` | banner image |
+| `data/uploads/` | banner image and images uploaded by authors |
 | `data/secret_key` | session signing key (keep it so logins survive restarts) |
 
 `restart: unless-stopped` brings the container back after a reboot. **Back up** by stopping the
@@ -44,13 +48,18 @@ container (`docker compose stop`) and copying `./data`. **Upgrade** with `git pu
 
 ## HTTPS / reverse proxy
 Run behind nginx/Caddy/Traefik for TLS and set `COOKIE_SECURE=1` and `TRUST_PROXY=1`.
+If you use nginx, raise the upload limit (default is 1 MB): `client_max_body_size 6m;`.
 
 ## Configuration (environment variables)
 `DATA_DIR` (default `./data`; `/data` in Docker), `SECRET_KEY` (optional override),
+`USER_UPLOAD_QUOTA_MB` (per-user image storage, default 50),
 `ADMIN_USERNAME`, `ADMIN_PASSWORD` (first run only), `COOKIE_SECURE`, `TRUST_PROXY`, `PORT` (dev server).
 
 ## Design notes / limits
 - Authors cannot delete posts, only admins can (see `can_delete_post()` in `app.py` to change this).
 - Login throttling is in-memory per worker; use your proxy for stricter rate limiting.
 - Search uses `LIKE`; fine for thousands of posts. Swap in SQLite FTS5 if you outgrow it.
+- Uploaded images are public to anyone who has the address (random, unguessable file names). Deleting an
+  image that a post still uses leaves a broken image in that post; the Images page shows where each is used.
+- Images are stored as uploaded (no resizing/thumbnails) and the type is verified from the file contents, not its name.
 - No email, password-reset-by-email, or media library: admins reset passwords from **Users**.

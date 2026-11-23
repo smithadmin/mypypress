@@ -18,7 +18,7 @@
     <nav class="nav">
       <a href="{{ url_for('index') }}">Home</a>
       {% if g.user %}
-        {% if can_post() %}<a href="{{ url_for('new_post') }}">New post</a><a href="{{ url_for('dashboard') }}">{{ 'All posts' if is_admin() else 'My posts' }}</a>{% endif %}
+        {% if can_post() %}<a href="{{ url_for('new_post') }}">New post</a><a href="{{ url_for('dashboard') }}">{{ 'All posts' if is_admin() else 'My posts' }}</a><a href="{{ url_for('images') }}">Images</a>{% endif %}
         {% if is_admin() %}<a href="{{ url_for('admin_settings') }}">Site settings</a><a href="{{ url_for('admin_users') }}">Users</a>{% endif %}
         <a href="{{ url_for('account') }}">{{ g.user['username'] }}</a>
         <form method="post" action="{{ url_for('logout') }}" class="inline">

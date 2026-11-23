@@ -406,6 +406,170 @@ class CustomisationTests(Base):
         self.assertIn(b"my comment", html); self.assertIn(b"[deleted user]", html)
 
 
+JPG = b"\xff\xd8\xff\xe0" + b"\x00" * 40
+GIF = b"GIF89a" + b"\x00" * 20
+WEBP = b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 20
+
+
+class ImageTests(Base):
+    def upload(self, c, data=PNG, name="pic.png", api=True):
+        url = "/images/upload" if api else "/images"
+        return self.post(c, url, {"image": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+
+    def poster(self, a, name="alice"):
+        return self.make_user(a, name, can_post=True)
+
+    def test_poster_uploads_and_image_renders_inline(self):
+        a = self.admin()
+        alice = self.poster(a)
+        r = self.upload(alice, name="My Cat (1).png")
+        self.assertEqual(r.status_code, 200)
+        info = r.get_json()
+        self.assertTrue(re.fullmatch(r"/uploads/[0-9a-f]{16}\.png", info["url"]))
+        self.assertEqual(info["markdown"], f"![My Cat 1]({info['url']})")
+        self.assertTrue((blog.app.config["UPLOAD_DIR"] / info["filename"]).exists())
+        self.new_post(alice, title="With Image", body=f"Look:\n\n{info['markdown']}\n\nnice")
+        html = self.client().get("/post/with-image").data.decode()
+        self.assertIn(f'<img alt="My Cat 1" src="{info["url"]}"', html)
+        served = self.client().get(info["url"])                      # visitors can see it
+        self.assertEqual(served.status_code, 200)
+        self.assertEqual(served.mimetype, "image/png")
+
+    def test_all_supported_formats(self):
+        a = self.admin()
+        alice = self.poster(a)
+        for data, name, ext in ((JPG, "a.jpg", "jpg"), (GIF, "a.gif", "gif"), (WEBP, "a.webp", "webp")):
+            r = self.upload(alice, data, name)
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json()["filename"].endswith("." + ext))
+
+    def test_extension_is_ignored_content_is_checked(self):
+        a = self.admin()
+        alice = self.poster(a)
+        for data, name in ((b"<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'/>", "x.svg"),
+                           (b"<svg onload=alert(1)>", "x.png"),
+                           (b"MZ\x90\x00 not an image", "evil.exe"),
+                           (b"<script>alert(1)</script>", "x.jpg"),
+                           (b"", "empty.png")):
+            r = self.upload(alice, data, name)
+            self.assertEqual(r.status_code, 400, name)
+            self.assertIn("error", r.get_json())
+        self.assertEqual(blog.connect().execute("SELECT COUNT(*) FROM images").fetchone()[0], 0)
+        self.assertEqual(list(blog.app.config["UPLOAD_DIR"].iterdir()), [])
+
+    def test_oversize_rejected(self):
+        a = self.admin()
+        alice = self.poster(a)
+        big = PNG + b"\x00" * (5 * 1024 * 1024)
+        r = self.upload(alice, big)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("too large", r.get_json()["error"])
+
+    def test_huge_request_gives_json_error(self):
+        a = self.admin()
+        alice = self.poster(a)
+        r = self.upload(alice, PNG + b"\x00" * (7 * 1024 * 1024))
+        self.assertEqual(r.status_code, 413)
+        self.assertIn("too large", r.get_json()["error"])
+
+    def test_only_posters_may_upload(self):
+        a = self.admin()
+        plain = self.make_user(a, "plain", can_post=False)
+        self.assertEqual(self.upload(plain).status_code, 403)
+        self.assertEqual(plain.get("/images").status_code, 403)
+        visitor = self.client()
+        self.assertEqual(self.upload(visitor).status_code, 302)       # redirected to login
+        self.assertEqual(blog.connect().execute("SELECT COUNT(*) FROM images").fetchone()[0], 0)
+
+    def test_upload_requires_csrf(self):
+        a = self.admin()
+        alice = self.poster(a)
+        r = alice.post("/images/upload", data={"image": (io.BytesIO(PNG), "p.png")},
+                       content_type="multipart/form-data")
+        self.assertEqual(r.status_code, 400)
+
+    def test_quota_enforced_for_users_not_admins(self):
+        a = self.admin()
+        alice = self.poster(a)
+        old = os.environ.get("USER_UPLOAD_QUOTA_MB")
+        os.environ["USER_UPLOAD_QUOTA_MB"] = "1"
+        try:
+            chunk = PNG + b"\x00" * (600 * 1024)
+            self.assertEqual(self.upload(alice, chunk).status_code, 200)
+            r = self.upload(alice, chunk)
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("limit", r.get_json()["error"])
+            self.assertEqual(self.upload(a, chunk).status_code, 200)    # admins are exempt
+            self.assertEqual(self.upload(a, chunk).status_code, 200)
+            # freeing space allows uploading again
+            iid = blog.connect().execute("SELECT id FROM images WHERE user_id=(SELECT id FROM users WHERE username='alice')").fetchone()["id"]
+            self.post(alice, f"/images/{iid}/delete")
+            self.assertEqual(self.upload(alice, chunk).status_code, 200)
+        finally:
+            if old is None:
+                os.environ.pop("USER_UPLOAD_QUOTA_MB", None)
+            else:
+                os.environ["USER_UPLOAD_QUOTA_MB"] = old
+
+    def test_delete_permissions_and_file_removed(self):
+        a = self.admin()
+        alice, bob = self.poster(a, "alice"), self.poster(a, "bob")
+        info = self.upload(alice).get_json()
+        iid = info["id"]
+        path = blog.app.config["UPLOAD_DIR"] / info["filename"]
+        self.assertEqual(self.post(bob, f"/images/{iid}/delete").status_code, 403)
+        self.assertTrue(path.exists())
+        self.assertEqual(self.post(alice, f"/images/{iid}/delete").status_code, 302)
+        self.assertFalse(path.exists())
+        self.assertEqual(self.client().get(info["url"]).status_code, 404)
+        info2 = self.upload(bob).get_json()
+        self.assertEqual(self.post(a, f"/images/{info2['id']}/delete").status_code, 302)   # admin can delete any
+        self.assertFalse((blog.app.config["UPLOAD_DIR"] / info2["filename"]).exists())
+
+    def test_gallery_lists_own_images_admin_sees_all_with_usage(self):
+        a = self.admin()
+        alice, bob = self.poster(a, "alice"), self.poster(a, "bob")
+        ia = self.upload(alice, name="alices.png").get_json()
+        self.upload(bob, name="bobs.png")
+        self.new_post(alice, title="Uses It", body=ia["markdown"])
+        page = alice.get("/images").data.decode()
+        self.assertIn("alices.png", page); self.assertNotIn("bobs.png", page)
+        self.assertIn("used in 1 post", page)
+        admin_page = a.get("/images").data.decode()
+        self.assertIn("alices.png", admin_page); self.assertIn("bobs.png", admin_page)
+        self.assertIn("not used in any post", admin_page)
+
+    def test_form_upload_fallback_without_js(self):
+        a = self.admin()
+        alice = self.poster(a)
+        r = self.upload(alice, api=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(blog.connect().execute("SELECT COUNT(*) FROM images").fetchone()[0], 1)
+        bad = self.upload(alice, b"nope", "x.png", api=False)
+        self.assertEqual(bad.status_code, 302)
+        self.assertEqual(blog.connect().execute("SELECT COUNT(*) FROM images").fetchone()[0], 1)
+
+    def test_external_https_image_still_works_and_javascript_src_blocked(self):
+        a = self.admin()
+        self.new_post(a, title="Ext", body="![ok](https://example.com/a.png)\n\n![bad](javascript:alert(1))")
+        html = self.client().get("/post/ext").data.decode()
+        self.assertIn('src="https://example.com/a.png"', html)
+        self.assertNotIn("javascript:", html)
+
+    def test_editor_shows_insert_button_and_survives_restart(self):
+        a = self.admin()
+        alice = self.poster(a)
+        self.assertIn(b"image-upload", alice.get("/new").data)
+        info = self.upload(alice).get_json()
+        blog.configure(blog.app, self.tmp.name)
+        blog.init_db()
+        self.assertEqual(self.client().get(info["url"]).status_code, 200)
+        self.assertEqual(blog.connect().execute("SELECT COUNT(*) FROM images").fetchone()[0], 1)
+
+    def test_app_name(self):
+        self.assertIn(b"powered by MyPyPress", self.client().get("/").data)
+
+
 class PersistenceTests(Base):
     def test_data_survives_restart(self):
         a = self.admin()

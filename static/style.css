@@ -58,3 +58,10 @@ table { width:100%; border-collapse:collapse; } th, td { text-align:left; paddin
 .color-field { display:flex; justify-content:space-between; align-items:center; gap:.5rem; font-weight:400; }
 .banner-preview { max-width:100%; max-height:140px; border-radius:6px; align-self:flex-start; }
 .site-footer { text-align:center; padding:2rem 1rem; color:color-mix(in srgb, var(--text) 55%, transparent); font-size:.85rem; }
+.uploader { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+.uploader .btn { padding:.25rem .8rem; font-size:.9rem; }
+.small-link { font-size:.85rem; }
+.image-row { display:flex; gap:1rem; padding:.75rem 0; border-top:1px solid color-mix(in srgb, var(--text) 12%, transparent); }
+.thumb { width:96px; height:96px; object-fit:cover; border-radius:6px; background:color-mix(in srgb, var(--text) 8%, var(--surface)); display:block; }
+.image-info { flex:1; min-width:0; }
+.snippet { font-family:ui-monospace,Consolas,monospace; font-size:.8rem; padding:.25rem .4rem; margin:.25rem 0; }
