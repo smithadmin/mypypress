@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import csrf %}
+{% block title %}Images – {% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Images</h1>
+  <p class="muted">Upload pictures here, or use <em>Insert image</em> in the post editor. Paste the Markdown snippet into a post to show the image inline. Uploaded images are public to anyone who knows the address.</p>
+  <form method="post" enctype="multipart/form-data" class="stack">
+    {{ csrf() }}
+    <label for="image">Upload an image <small class="muted">(PNG, JPEG, GIF or WebP, max 5 MB)</small></label>
+    <input id="image" name="image" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required>
+    <button type="submit">Upload</button>
+  </form>
+  {% if quota is not none %}
+  <p class="muted">Storage used: {{ '%.1f' % (used / 1048576) }} MB of {{ (quota / 1048576)|int }} MB</p>
+  {% else %}
+  <p class="muted">Storage used by you: {{ '%.1f' % (used / 1048576) }} MB (administrators have no limit)</p>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>{{ 'All images' if is_admin() else 'Your images' }}</h2>
+  {% for i in images %}
+  <div class="image-row">
+    <a href="{{ url_for('uploads', filename=i.filename) }}"><img class="thumb" src="{{ url_for('uploads', filename=i.filename) }}" alt=""></a>
+    <div class="image-info">
+      <strong>{{ i.original_name }}</strong>
+      <div class="meta">{{ '%.0f' % (i.size / 1024) }} KB &middot; {{ i.created_at|dt }}{% if is_admin() %} &middot; by {{ i.username or '[deleted user]' }}{% endif %}
+        &middot; {% if i.used_in %}used in {{ i.used_in }} post{{ '' if i.used_in == 1 else 's' }}{% else %}not used in any post{% endif %}</div>
+      <input class="snippet" readonly value="![{{ i.original_name|img_alt }}]({{ url_for('uploads', filename=i.filename) }})" aria-label="Markdown for {{ i.original_name }}">
+      <form method="post" action="{{ url_for('delete_image', image_id=i.id) }}" class="inline"
+            data-confirm="Delete this image?{% if i.used_in %} It is used in {{ i.used_in }} post(s), which will show a broken image.{% endif %}">
+        {{ csrf() }}<button class="link-btn small" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No images yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}
